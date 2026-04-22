@@ -1,0 +1,114 @@
+# ─────────────────────────────────────────────────────────────────────
+# Paladin Policy Configuration
+#
+# Hot-reloadable rules for the Paladin policy engine.
+# Changes are picked up automatically (file watcher).
+#
+# NOTE: Prime directives are NOT here. They are hardcoded in
+# src/prime-directives.ts and cannot be overridden by this file.
+# This file controls the CONFIGURABLE layer only.
+# ─────────────────────────────────────────────────────────────────────
+
+version: "1.0"
+
+# ── Bash command rules ───────────────────────────────────────────────
+
+bash:
+  # Commands must start with one of these prefixes to execute.
+  # Dynamic prefixes (using PROJECT_ROOT) are added at runtime.
+  allowedPrefixes:
+    - "pm2 status"
+    - "pm2 logs"
+    - "pm2 restart"
+    - "pm2 list"
+    - "pm2 jlist"
+    - "pm2 describe"
+    - "pm2 start"
+    - "pm2 stop"
+    - "node dist/bridge-cli.js"
+    - "node dist/systems-check.js"
+    - "node dist/schedule-cli.js"
+    - "node dist/save-restart-context-cli.js"
+    - "git status"
+    - "git log"
+    - "git diff"
+    - "git branch"
+    - "git add"
+    - "git commit"
+    - "cat "
+    - "ls "
+    - "type "
+    - "dir "
+    - "grep "
+    - "find "
+    - "npx tsc"
+    - "npm run"
+    - "npm test"
+    - "npm install"
+
+  # Commands matching any of these regex patterns are always blocked.
+  # Checked BEFORE the whitelist.
+  blockedPatterns:
+    - "\\brm\\s"
+    - "\\brm\\b.*-rf"
+    - "\\bsudo\\b"
+    - "\\bcurl\\b.*\\|\\s*bash"
+    - "\\bwget\\b.*\\|\\s*bash"
+    - "\\beval\\b"
+    - "\\|\\s*sh\\b"
+    - "\\|\\s*bash\\b"
+    - "\\brmdir\\b"
+    - "\\bmkfs\\b"
+    - "\\bdd\\s+if="
+    - "\\bformat\\b"
+    - ">\\s*/dev/"
+    - "\\bchmod\\b.*777"
+    - "\\bchown\\b"
+
+# ── Operations requiring the operator's approval via Telegram ─────────────────
+
+approval:
+  patterns:
+    - pattern: "writeFile.*CLAUDE\\.md"
+      reason: "Modifying system prompt"
+      timeout: 60
+    - pattern: "writeFile.*\\.env"
+      reason: "Modifying environment config"
+      timeout: 60
+    - pattern: "pm2 delete"
+      reason: "Removing PM2 process"
+      timeout: 30
+    - pattern: "pm2 stop paladin"
+      reason: "Stopping Paladin security engine"
+      timeout: 60
+
+# ── File access restrictions ─────────────────────────────────────────
+
+files:
+  # Paths where writes are permitted
+  writeAllowed:
+    - "vault:"           # Obsidian vault (resolved at runtime)
+    - "workspace/"       # Workspace directory (relative to PROJECT_ROOT)
+    - "store/"           # Database/store directory
+    - "config/"          # Config files (including this one)
+
+  # Paths where writes are always denied (checked first)
+  writeDenied:
+    - ".env"             # Environment files
+    - ".env.age"         # Encrypted env files
+    - "src/"             # Source code (use a code worker for changes)
+
+# ── Rate limits ──────────────────────────────────────────────────────
+
+rateLimits:
+  bashCommandsPerMinute: 30
+  fileWritesPerMinute: 20
+  externalApiCallsPerMinute: 10
+
+# ── Injection detection thresholds ───────────────────────────────────
+
+injection:
+  thresholds:
+    low: 4
+    medium: 8
+    high: 14

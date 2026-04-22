@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment (secrets)
+.env
+.env.age
+.env.local
+
+# Databases
+store/*.db
+store/*.db-shm
+store/*.db-wal
+
+# Backups
+store/backups/
+
+# Runtime
+workspace/uploads/*
+!workspace/uploads/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+coverage/
+
+# Quarantine
+store/quarantine/
+store/skill-scans/
