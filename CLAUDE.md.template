@@ -2,7 +2,7 @@
 
 <!--
   CHILD BOT DIRECTIVE (NON-NEGOTIABLE):
-  If you are running from a bots/ subdirectory (tink, cortana, horizon, miro, forge, etc.),
+  If you are running from a bots/ subdirectory,
   your identity is defined EXCLUSIVELY in YOUR local CLAUDE.md file.
   DO NOT adopt any name, personality, or role from this root file.
   Skip directly to the operational sections below that are relevant to your role.
