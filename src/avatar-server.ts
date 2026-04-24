@@ -18,8 +18,9 @@ import { WebSocketServer } from 'ws';
 import fs from 'fs';
 import path from 'path';
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { AVATAR_PORT, PROJECT_ROOT, ALLOWED_CHAT_ID, DASHBOARD_PORT } from './config.js';
+import { REGISTERED_AGENTS } from './bridge.js';
 import { logger } from './logger.js';
 import { addClient, getAvatarState, getAvatarClientCount, getAudioBuffer, AVATAR_VERSION, startAvatarHeartbeat } from './avatar-state.js';
 import { getAvatarDisplayHtml } from './avatar-display-html.js';
@@ -395,24 +396,34 @@ export function startAvatarServer(): ServerType {
     }
   });
 
-  // Fleet restart -- restart a specific pm2 process (validated against known names)
+  // Fleet restart -- restart a specific process (validated against known names)
+  // SECURITY: name is regex-validated (^[a-zA-Z0-9_-]+$) and whitelisted below.
+  // All exec calls use execFileSync with explicit args to avoid shell injection.
   app.post('/kiosk/fleet/restart', async (c) => {
     try {
       const body = await c.req.json<{ name?: string }>();
       const name = body?.name?.trim();
       if (!name) return c.json({ ok: false, error: 'Missing name' }, 400);
 
-      // Validate name exists in pm2 (prevent injection)
-      const raw = execSync('pm2 jlist', { timeout: 10000, encoding: 'utf-8', windowsHide: true });
-      const procs = JSON.parse(raw);
-      const known = procs.map((p: any) => p.name);
-      if (!known.includes(name)) {
+      // Validate name: must be alphanumeric/dash only (prevent injection)
+      if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+        return c.json({ ok: false, error: 'Invalid process name' }, 400);
+      }
+
+      // Whitelist check: only allow known agents and system processes
+      const ALLOWED_PROCESS_NAMES = new Set([
+        ...REGISTERED_AGENTS,
+        'content-board', 'avatar-server', 'dashboard',
+      ]);
+      if (!ALLOWED_PROCESS_NAMES.has(name)) {
+        logger.warn({ name }, 'Fleet restart rejected: name not in process whitelist');
         return c.json({ ok: false, error: `Unknown process: ${name}` }, 400);
       }
 
-      execSync(`pm2 restart "${name}"`, { timeout: 15000, encoding: 'utf-8', windowsHide: true });
-      logger.info({ name }, 'Fleet: restarted process from kiosk');
-      return c.json({ ok: true, restarted: name });
+      // Use execFileSync with array args -- no shell, no template-literal injection path
+      execFileSync('pm2', ['restart', name], { timeout: 15000, encoding: 'utf-8', windowsHide: true });
+      logger.info({ name, runtime: 'pm2' }, 'Fleet: restarted PM2 process from kiosk');
+      return c.json({ ok: true, restarted: name, runtime: 'pm2' });
     } catch (err) {
       logger.error({ err }, 'Fleet restart error');
       return c.json({ ok: false, error: 'Restart failed' }, 500);
@@ -877,12 +888,12 @@ export function startAvatarServer(): ServerType {
 
       fs.writeFileSync(resolved, content, 'utf-8');
 
-      // Auto-commit
+      // Auto-commit -- SECURITY: path.basename(resolved) could contain shell metacharacters, use execFileSync with array args
       try {
-        execSync(
-          `bash ${path.join(PROJECT_ROOT, 'scripts', 'vault-commit.sh')} "Kiosk edit: ${path.basename(resolved)}"`,
-          { timeout: 10000, windowsHide: true }
-        );
+        execFileSync('bash', [
+          path.join(PROJECT_ROOT, 'scripts', 'vault-commit.sh'),
+          `Kiosk edit: ${path.basename(resolved)}`
+        ], { timeout: 10000, windowsHide: true });
       } catch { /* commit failure is non-fatal */ }
 
       logger.info({ path: reqPath }, 'Vault file saved via kiosk');

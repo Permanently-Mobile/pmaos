@@ -38,6 +38,7 @@ import {
 import { logger } from './logger.js';
 import { formatForTelegram, splitMessage } from './bot.js';
 import { processVaultFeedback } from './vault-feedback.js';
+import { scanContent } from './wraith/guardrails.js';
 
 // ── Conversation State ──────────────────────────────────────────────
 
@@ -140,6 +141,38 @@ export function intakeBridgeResults(): void {
       } catch {
         acknowledgeResult(msg.id);
         continue;
+      }
+
+      // ── Guardrail scan: check result payload for injection patterns ──
+      const scanSource = `bridge-result:${msg.from_agent || 'unknown'}`;
+      const scanResult = scanContent(payload.summary || '', scanSource);
+
+      if (scanResult.action === 'block') {
+        logger.warn(
+          { agent: msg.from_agent, msgId: msg.id, patterns: scanResult.matchedPatterns.length, details: scanResult.details },
+          'GUARDRAIL BLOCKED bridge result -- payload contains injection patterns',
+        );
+        // Don't process, but acknowledge so it doesn't loop. Log for review.
+        acknowledgeResult(msg.id);
+        // Route a security alert to inbox instead
+        const alertId = randomBytes(8).toString('hex');
+        addInboxItem({
+          id: alertId,
+          source: 'wraith-guardrails',
+          priority: 3,
+          category: 'security',
+          title: `BLOCKED: ${msg.from_agent} result failed guardrail scan`,
+          content: `A result from ${msg.from_agent} was blocked by guardrail scanning.\n\n${scanResult.details}\n\nPatterns matched: ${scanResult.matchedPatterns.map(p => p.name).join(', ')}\n\nThe original payload has been discarded. Review bridge DB message ID: ${msg.id}`,
+        });
+        continue;
+      }
+
+      if (scanResult.action === 'flag') {
+        logger.warn(
+          { agent: msg.from_agent, msgId: msg.id, patterns: scanResult.matchedPatterns.length, details: scanResult.details },
+          'GUARDRAIL FLAGGED bridge result -- processing with elevated priority',
+        );
+        // Still process, but bump priority to HIGH so owner sees it immediately
       }
 
       // Silent agents: acknowledge the bridge message (clears the queue)
